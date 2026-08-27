@@ -401,9 +401,19 @@ function taskBase(task: MockTask) {
     isRecurring: task.isRecurring,
     sprintId: task.sprintId,
     storyPoints: task.storyPoints,
+    activeTimerStartedAt: task.activeTimerStartedAt ?? null,
+    loggedMinutes: task.loggedMinutes ?? 0,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };
+}
+
+/** Banks whatever the running timer has accrued and clears it. No-op if idle. */
+function stopTaskTimer(task: MockTask): void {
+  if (!task.activeTimerStartedAt) return;
+  const elapsedMs = Date.now() - new Date(task.activeTimerStartedAt).getTime();
+  task.loggedMinutes = (task.loggedMinutes ?? 0) + Math.max(0, Math.round(elapsedMs / 60000));
+  task.activeTimerStartedAt = null;
 }
 
 function taskListItem(task: MockTask) {
@@ -1880,6 +1890,33 @@ const routes: Route[] = [
     },
   },
   {
+    // Starts the work timer — only while the task is actively In Progress, so
+    // the option only ever appears there in the UI too.
+    method: "POST",
+    regex: new RegExp(`^/tasks/${SEG}/timer/start$`),
+    handler: ({ params }) => {
+      const task = findTask(params[0]);
+      if (!task) throw new ApiError(404, "Task not found.");
+      if (task.status !== TaskStatus.IN_PROGRESS) {
+        throw new ApiError(400, "Set the task to In Progress before starting the timer.");
+      }
+      if (task.activeTimerStartedAt) throw new ApiError(400, "The timer is already running.");
+      task.activeTimerStartedAt = nowIso();
+      return taskDetail(task);
+    },
+  },
+  {
+    method: "POST",
+    regex: new RegExp(`^/tasks/${SEG}/timer/stop$`),
+    handler: ({ params }) => {
+      const task = findTask(params[0]);
+      if (!task) throw new ApiError(404, "Task not found.");
+      if (!task.activeTimerStartedAt) throw new ApiError(400, "The timer is not running.");
+      stopTaskTimer(task);
+      return taskDetail(task);
+    },
+  },
+  {
     method: "PATCH",
     regex: new RegExp(`^/tasks/${SEG}$`),
     handler: ({ params, body }) => {
@@ -1912,6 +1949,11 @@ const routes: Route[] = [
               subtask.updatedAt = nowIso();
             }
           }
+        }
+        // The work timer only makes sense while actively In Progress — leaving
+        // that status auto-stops and banks it rather than losing the minutes.
+        if (task.status !== TaskStatus.IN_PROGRESS) {
+          stopTaskTimer(task);
         }
       }
       const priority = str(body.priority);

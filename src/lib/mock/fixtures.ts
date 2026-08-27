@@ -210,6 +210,15 @@ export interface MockTask {
   sprintId: string | null;
   /** Agile estimate in story points. `null` when the task is not point-estimated. */
   storyPoints: number | null;
+  /**
+   * ISO timestamp the work timer was last started, or `null` when no timer is
+   * running. Only meaningful while `status` is `IN_PROGRESS` — changing status
+   * away from In Progress auto-stops and banks it. Optional so existing seed
+   * tasks don't each need one.
+   */
+  activeTimerStartedAt?: string | null;
+  /** Minutes banked by the timer across every start/stop session so far. */
+  loggedMinutes?: number;
   createdAt: string;
   updatedAt: string;
 }
