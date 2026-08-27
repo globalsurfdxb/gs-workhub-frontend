@@ -541,6 +541,17 @@ function bugPersonSummary(userId: string | null) {
 /** One row of `GET /teams/:id/bugs`, `PATCH /bugs/:id` and `POST /bugs`. */
 function bugRow(item: MockBug) {
   const project = findProject(item.projectId);
+  const history =
+    item.statusHistory && item.statusHistory.length > 0
+      ? item.statusHistory
+      : [
+          {
+            id: `${item.id}-seed`,
+            status: item.status,
+            changedById: item.reportedById,
+            changedAt: item.createdAt,
+          },
+        ];
   return {
     id: item.id,
     projectId: item.projectId,
@@ -555,6 +566,12 @@ function bugRow(item: MockBug) {
     project: project ? { id: project.id, name: project.name } : null,
     reporter: bugPersonSummary(item.reportedById),
     assignee: bugPersonSummary(item.assigneeId),
+    statusHistory: history.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      changedAt: entry.changedAt,
+      changedBy: bugPersonSummary(entry.changedById),
+    })),
   };
 }
 
@@ -1886,6 +1903,16 @@ const routes: Route[] = [
       if (status && (Object.values(TaskStatus) as string[]).includes(status) && status !== task.status) {
         logChange("status", task.status, status);
         task.status = status as TaskStatus;
+        // Completing the parent completes its subtasks too — they don't make
+        // sense left open once the task they belong to is done.
+        if (task.status === TaskStatus.COMPLETED) {
+          for (const subtask of tasks) {
+            if (subtask.parentTaskId === task.id && subtask.status !== TaskStatus.COMPLETED) {
+              subtask.status = TaskStatus.COMPLETED;
+              subtask.updatedAt = nowIso();
+            }
+          }
+        }
       }
       const priority = str(body.priority);
       if (
@@ -1973,7 +2000,18 @@ const routes: Route[] = [
       if (!bugRecord) throw new ApiError(404, "Bug not found.");
 
       const status = str(body.status);
-      if (status && (BUG_STATUSES as string[]).includes(status)) {
+      if (status && (BUG_STATUSES as string[]).includes(status) && status !== bugRecord.status) {
+        // Backfill a seed entry for the status it's leaving *before* overwriting,
+        // so the synthetic history (for bugs with no real log yet) reflects what
+        // the bug actually was, not the state it's about to become.
+        bugRecord.statusHistory = bugRecord.statusHistory ?? [
+          {
+            id: `${bugRecord.id}-seed`,
+            status: bugRecord.status,
+            changedById: bugRecord.reportedById,
+            changedAt: bugRecord.createdAt,
+          },
+        ];
         bugRecord.status = status as MockBugStatus;
         // Keep `resolvedAt` consistent with the workflow state, so the dashboard's
         // resolved/open split stays correct after an inline status change.
@@ -1982,6 +2020,14 @@ const routes: Route[] = [
         } else {
           bugRecord.resolvedAt = null;
         }
+        // Record who moved it and when — the bug detail panel's status timeline
+        // is built entirely from this log, so every transition must append one.
+        bugRecord.statusHistory.push({
+          id: `${bugRecord.id}-h${bugRecord.statusHistory.length}`,
+          status: bugRecord.status,
+          changedById: currentUser().id,
+          changedAt: nowIso(),
+        });
       }
 
       const priority = str(body.priority);

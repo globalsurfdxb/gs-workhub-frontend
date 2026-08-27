@@ -213,6 +213,13 @@ export interface BugPersonSummary {
   fullName: string;
 }
 
+export interface BugStatusHistoryEntry {
+  id: string;
+  status: BugStatus;
+  changedAt: string;
+  changedBy: BugPersonSummary | null;
+}
+
 export interface BugRow {
   id: string;
   projectId: string;
@@ -227,6 +234,8 @@ export interface BugRow {
   project: { id: string; name: string } | null;
   reporter: BugPersonSummary | null;
   assignee: BugPersonSummary | null;
+  /** Every status transition, oldest first. */
+  statusHistory: BugStatusHistoryEntry[];
 }
 
 export interface BugsListResponse {

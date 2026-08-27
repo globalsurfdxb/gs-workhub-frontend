@@ -265,6 +265,20 @@ export interface MockBug {
   screenshotUrl?: string | null;
   createdAt: string;
   resolvedAt: string | null;
+  /**
+   * Every status transition, oldest first — who changed it and when. Optional
+   * so the ~30 seeded bugs don't each need a fabricated backlog; a single
+   * synthetic entry (current status, reporter, createdAt) is derived for
+   * those in `bugRow()` when this is absent. New writes always append here.
+   */
+  statusHistory?: MockBugStatusHistoryEntry[];
+}
+
+export interface MockBugStatusHistoryEntry {
+  id: string;
+  status: MockBugStatus;
+  changedById: string;
+  changedAt: string;
 }
 
 export interface MockComment {
